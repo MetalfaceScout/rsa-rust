@@ -1,0 +1,12 @@
+[package]
+name = "rsa_rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.5.4", features = ["derive"] }
+clio = { version = "0.3.5", features = ["clap-parse"] }
+num-bigint-dig = "0.8.4"
+num-traits = "0.2.18"
+primes = "0.3.0"
+rand = "0.8.5"
