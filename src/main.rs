@@ -1,14 +1,16 @@
 use base::to_base10;
 use num_bigint_dig::BigUint;
-use std::{f32::consts::E, io::{Read, Write}, process::exit, str::FromStr};
+use std::{io::Write, process::exit, str::FromStr};
 
 mod millers;
 mod base;
 mod generate;
-//mod inverse; -- Maybe
+mod mainutil;
 
 use clap::{Parser, Subcommand};
 use clio::*;
+
+use crate::{base::from_base10, mainutil::{parse_input_group, read_key, split_string_at_n}};
 
 
 #[derive(Parser,Debug)]
@@ -78,11 +80,6 @@ enum SubCommand {
         privkey: Input
     }
 }
-//rs-rsa generate-keys <optional dir for private and publickey>
-//rs-rsa encrypt -f <file> <use default path for pub and private key>
-//rs-rsa encrypt "Thing to encrypt" -p <pubkey file path> -P <private file path>
-//rs-rsa decrypt -f <file> -P <private-key>
-//rs-rsa decrype --file <file> --pub-key <path to pubkey>
 
 
 fn main() {
@@ -108,47 +105,23 @@ fn main() {
     }
 }
 
-fn encrypt(input: InputArgGroup, mut output: Output, mut pubkey:Input) {
-    //if we don't have text, we must have a file
+fn encrypt(input: InputArgGroup, mut output: Output, pubkey:Input) {
 
-    let input_string;
+    //Have to do some matching to get the inpu
+    let input_string = parse_input_group(input);
 
-    match input.file {
-        Some(mut f) => {
-            let mut string_buf = String::new();
-            let res = f.read_to_string(&mut string_buf);
-            match res {
-                Ok(_) => input_string = string_buf,
-                Err(e) => {panic!("Failed to read input, either specify a file or include input on stdin. Error: {e}")}
-            }
-        }
-        None => {
-            match input.input {
-                Some(s) => {
-                    input_string = s;
-                }
-                None => {
-                    panic!("Somehow, there was no file or input specified.");
-                }
-            }
-        }
-    }
+    //Split the string every 215 chars into a vec of strings
+    let input_string_vec = split_string_at_n(215, input_string);
+
+    let mut input_vec = Vec::new();
     
-    let input_as_int = to_base10(&input_string, ".,?! \t\n\rabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
-
-    if input_as_int.to_string().len() > 216 {
-        panic!("Not implemented")
-        // TODO: split into blocks 
+    for i in input_string_vec {
+        let input_as_int = to_base10(&i, ".,?! \t\n\rabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+        input_vec.push(input_as_int);
     }
 
-    let mut pubkey_text = String::new();
-    let res = pubkey.read_to_string(&mut pubkey_text);
-    match res {
-        Ok(_) => {}
-        Err(e) => {
-            panic!("Could not read from pubkey file!\n{e}")
-        }
-    }
+    //Parse pubkey
+    let pubkey_text = read_key(pubkey);
 
     let keys = Vec::from_iter(pubkey_text.split('\n').into_iter());
     assert_eq!(keys.len(), 2);
@@ -179,9 +152,16 @@ fn encrypt(input: InputArgGroup, mut output: Output, mut pubkey:Input) {
         }
     }
 
-    let encrpyted = input_as_int.modpow(&e, &n);
+    //Actually encrypt
+    let mut encrypted = String::new();
 
-    let res = output.write(encrpyted.to_string().as_bytes());
+    for block in input_vec {
+        let out = block.modpow(&e, &n);
+        encrypted.push_str(out.to_string().as_str());
+        encrypted.push('$');
+    }
+
+    let res = output.write(encrypted.to_string().as_bytes());
     match res {
         Ok(u) => {
             if output.path().to_string() == "\"-\"" {
@@ -199,40 +179,66 @@ fn encrypt(input: InputArgGroup, mut output: Output, mut pubkey:Input) {
 }
 
 
-fn decrypt(input: InputArgGroup, mut output_file: Output, mut privkey: Input){ 
-    let input_string;
+fn decrypt(input: InputArgGroup, mut output_file: Output, privkey: Input){ 
+    let input_string = parse_input_group(input);
 
-    match input.file {
-        Some(mut f) => {
-            let mut string_buf = String::new();
-            let res = f.read_to_string(&mut string_buf);
-            match res {
-                Ok(_) => input_string = string_buf,
-                Err(e) => {panic!("Failed to read input, either specify a file or include input on stdin. Error: {e}")}
-            }
-        }
-        None => {
-            match input.input {
-                Some(s) => {
-                    input_string = s;
-                }
-                None => {
-                    panic!("Somehow, there was no file or input specified.");
-                }
-            }
-        }
-    }
+    let privkey_text = read_key(privkey);
 
-    let input_as_int;
-    let res = BigUint::from_str(&input_string);
-    match res {
+    let keys = Vec::from_iter(privkey_text.split('\n').into_iter());
+    assert_eq!(keys.len(), 2);
+    let n_string = keys.first().unwrap().to_string();
+    let d_string = keys.last().unwrap().to_string();
+
+    let n_res = BigUint::from_str(&n_string);
+    let d_res = BigUint::from_str(&d_string);
+
+    let d;
+    let n;
+
+    match n_res {
         Ok(i) => {
-            input_as_int = i;
+            n = i;
         }
         Err(e) => {
-            panic!("Failed to parse input to be decrypted! Make sure it's all numbers and you specified the right file. Error: {e}");
+            panic!("Could not parse n from the provided pubkey file! Error: {e}");
+        }
+    }
+    
+    match d_res {
+        Ok(i) => {
+            d = i;
+        }
+        Err(e) => {
+            panic!("Could not parse e from the provided pubkey file! Error: {e}");
         }
     }
 
-}
+    let mut decrypted_string = String::new();
 
+    let input_vec: Vec<&str> = input_string.split('$').collect();
+
+    for s in input_vec {
+        if s.len() != 0 {
+            let i = BigUint::from_str(&s).unwrap();
+            let decrypted = i.modpow(&d, &n);
+            let decrypted_as_text = from_base10(decrypted, ".,?! \t\n\rabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+            decrypted_string.push_str(&decrypted_as_text);
+        }
+    }
+
+
+    let res = output_file.write(format!("{decrypted_string}").as_bytes());
+    match res {
+        Ok(r) => {
+            if output_file.path().to_string() == "\"-\"" {
+                exit(0);
+            } else {
+                println!("Wrote {r} bytes to output file.");
+                exit(0);
+            }
+        }
+        Err(e) => {
+            panic!("Failed to write to the output. Error: {}", e);
+        }
+    }
+}

@@ -24,6 +24,10 @@ fn miller_test(n: &BigUint) -> bool {
     let zero_as_bigint: BigUint = BigUint::from(0u8);
     let one_as_bigint: BigUint = BigUint::from(1u8);
 
+    if *n == zero_as_bigint {
+        return false;
+    }
+
     let mut t = n - &one_as_bigint;
     let mut s: u64 = 0;
 
