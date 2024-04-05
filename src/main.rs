@@ -1,5 +1,6 @@
 use base::to_base10;
-use std::io::Read;
+use num_bigint_dig::BigUint;
+use std::{f32::consts::E, io::{Read, Write}, process::exit, str::FromStr};
 
 mod millers;
 mod base;
@@ -67,8 +68,8 @@ enum SubCommand {
     },
 
     Decrypt {
-        #[clap(short, long, default_value="-")]
-        input_file: Input,
+        #[clap(flatten)]
+        group: InputArgGroup,
 
         #[clap(short, long, default_value="-")]
         output_file: Output,
@@ -100,14 +101,14 @@ fn main() {
             pubkey 
         } => encrypt(group, output_file, pubkey),
         SubCommand::Decrypt { 
-            input_file, 
+            group, 
             output_file, 
-            privkey
-        } => (),
+            privkey 
+        } => decrypt(group, output_file, privkey)
     }
 }
 
-fn encrypt(input: InputArgGroup, output: Output, mut pubkey:Input) {
+fn encrypt(input: InputArgGroup, mut output: Output, mut pubkey:Input) {
     //if we don't have text, we must have a file
 
     let input_string;
@@ -151,14 +152,87 @@ fn encrypt(input: InputArgGroup, output: Output, mut pubkey:Input) {
 
     let keys = Vec::from_iter(pubkey_text.split('\n').into_iter());
     assert_eq!(keys.len(), 2);
-    let n = keys.first().unwrap().to_string();
-    let e = keys.last().unwrap().to_string();
+    let n_string = keys.first().unwrap().to_string();
+    let e_string = keys.last().unwrap().to_string();
 
+    let n_res = BigUint::from_str(&n_string);
+    let e_res = BigUint::from_str(&e_string);
 
+    let e;
+    let n;
+
+    match n_res {
+        Ok(i) => {
+            n = i;
+        }
+        Err(e) => {
+            panic!("Could not parse n from the provided pubkey file! Error: {e}");
+        }
+    }
+    
+    match e_res {
+        Ok(i) => {
+            e = i;
+        }
+        Err(e) => {
+            panic!("Could not parse e from the provided pubkey file! Error: {e}");
+        }
+    }
+
+    let encrpyted = input_as_int.modpow(&e, &n);
+
+    let res = output.write(encrpyted.to_string().as_bytes());
+    match res {
+        Ok(u) => {
+            if output.path().to_string() == "\"-\"" {
+                exit(0);
+            } else {
+                println!("Wrote {u} bytes to output file.");
+                exit(0);
+            }
+        },
+        Err(e) => {
+            println!("Failed to write to output file. Error: {e}");
+        }
+    }
 
 }
 
 
+fn decrypt(input: InputArgGroup, mut output_file: Output, mut privkey: Input){ 
+    let input_string;
 
-//RSA!
+    match input.file {
+        Some(mut f) => {
+            let mut string_buf = String::new();
+            let res = f.read_to_string(&mut string_buf);
+            match res {
+                Ok(_) => input_string = string_buf,
+                Err(e) => {panic!("Failed to read input, either specify a file or include input on stdin. Error: {e}")}
+            }
+        }
+        None => {
+            match input.input {
+                Some(s) => {
+                    input_string = s;
+                }
+                None => {
+                    panic!("Somehow, there was no file or input specified.");
+                }
+            }
+        }
+    }
+
+    let input_as_int;
+    let res = BigUint::from_str(&input_string);
+    match res {
+        Ok(i) => {
+            input_as_int = i;
+        }
+        Err(e) => {
+            panic!("Failed to parse input to be decrypted! Make sure it's all numbers and you specified the right file. Error: {e}");
+        }
+    }
+
+}
 
