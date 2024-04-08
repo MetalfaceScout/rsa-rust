@@ -45,7 +45,7 @@ pub fn split_string_at_n(n: usize, string: String) -> Vec<String> {
             counter += 1;
         }
     }
-    if input_string_vec.len() != 0 {
+    if temp_string.len() != 0 {
         input_string_vec.push(temp_string);
     }
     return input_string_vec;

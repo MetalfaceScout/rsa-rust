@@ -155,9 +155,12 @@ fn encrypt(input: InputArgGroup, mut output: Output, pubkey:Input) {
     //Actually encrypt
     let mut encrypted = String::new();
 
+    
+    
     for block in input_vec {
         let out = block.modpow(&e, &n);
-        encrypted.push_str(out.to_string().as_str());
+        let new_string = from_base10(out, ".,?! \t\n\rabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+        encrypted.push_str(new_string.as_str());
         encrypted.push('$');
     }
 
@@ -219,8 +222,8 @@ fn decrypt(input: InputArgGroup, mut output_file: Output, privkey: Input){
 
     for s in input_vec {
         if s.len() != 0 {
-            let i = BigUint::from_str(&s).unwrap();
-            let decrypted = i.modpow(&d, &n);
+            let as_base_10 = to_base10(s, ".,?! \t\n\rabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
+            let decrypted = as_base_10.modpow(&d, &n);
             let decrypted_as_text = from_base10(decrypted, ".,?! \t\n\rabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789");
             decrypted_string.push_str(&decrypted_as_text);
         }
